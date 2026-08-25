@@ -1,6 +1,5 @@
 /**
  * Settings command: /markdown-box-settings [label|border|show|reset] ...
- * Aliased as /codeblock-settings for users upgrading from upstream pi-codeblock-box.
  */
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { getConfig, getConfigPath, writeConfig, formatConfig, normalizeColorInput, type MarkdownBoxConfig } from "./theme";
@@ -130,11 +129,6 @@ export function registerSettingsCommand(pi: ExtensionAPI) {
 	const handler = buildHandler();
 	pi.registerCommand("markdown-box-settings", {
 		description: "Configure markdown box label and border colors (code blocks + tables)",
-		handler,
-	});
-	// Backward-compat alias for users coming from upstream pi-codeblock-box.
-	pi.registerCommand("codeblock-settings", {
-		description: "Alias for /markdown-box-settings (kept for upstream compatibility)",
 		handler,
 	});
 }

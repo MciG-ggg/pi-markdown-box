@@ -97,7 +97,7 @@ Direct command forms:
 /markdown-box-settings border none
 ```
 
-`/codeblock-settings` is registered as an alias for users upgrading from upstream pi-codeblock-box.
+`/codeblock-settings` is not registered — only `/markdown-box-settings`.
 
 ## Mermaid
 
