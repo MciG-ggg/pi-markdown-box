@@ -1,7 +1,7 @@
 {
-  "name": "pi-codeblock-box",
-  "version": "0.1.0",
-  "description": "Render Pi inline Markdown fenced code blocks as terminal boxes instead of literal backtick fences.",
+  "name": "pi-markdown-box",
+  "version": "0.2.0",
+  "description": "Pi extension that renders inline Markdown fenced code blocks and tables as terminal boxes (╭─╮ style). Fork of pi-codeblock-box with broader scope.",
   "type": "module",
   "main": "./extensions/index.ts",
   "types": "./extensions/index.ts",
@@ -10,6 +10,7 @@
     "pi-extension",
     "markdown",
     "codeblock",
+    "table",
     "tui"
   ],
   "license": "MIT",
@@ -26,13 +27,13 @@
     "@earendil-works/pi-coding-agent": "*",
     "@earendil-works/pi-tui": "*"
   },
-  "author": "de-monkey-v",
+  "author": "MciG-ggg",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/de-monkey-v/pi-codeblock-box.git"
+    "url": "git+https://github.com/MciG-ggg/pi-markdown-box.git"
   },
   "bugs": {
-    "url": "https://github.com/de-monkey-v/pi-codeblock-box/issues"
+    "url": "https://github.com/MciG-ggg/pi-markdown-box/issues"
   },
-  "homepage": "https://github.com/de-monkey-v/pi-codeblock-box#readme"
+  "homepage": "https://github.com/MciG-ggg/pi-markdown-box#readme"
 }
