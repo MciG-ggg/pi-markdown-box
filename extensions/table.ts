@@ -189,14 +189,14 @@ export function renderTableBox(
 
 	// Top border: ╭─[w0]─┬─[w1]─┬─...─[wn-1]─╮
 	const topCells = columnWidths.map((w) => styleBorder(BOX.h.repeat(w)));
-	out.push(`${styleBorder(BOX.tl)}${topCells.join(styleBorder(`─${BOX.tj}`))}${styleBorder(`─${BOX.tr}`)}`);
+	out.push(`${styleBorder(BOX.tl)}${styleBorder("─")}${topCells.join(styleBorder(`─${BOX.tj}─`))}${styleBorder(`─${BOX.tr}`)}`);
 
 	// Header (bold/label-styled)
 	out.push(...renderTableRow(headerCells, columnWidths, token.align ?? [], styleBorder, styleLabel));
 
 	// Header-body separator: ├─┼─┤
 	const sepCells = columnWidths.map((w) => styleBorder(BOX.h.repeat(w)));
-	const separatorLine = `${styleBorder(BOX.lj)}${sepCells.join(styleBorder(`─${BOX.xj}`))}${styleBorder(`─${BOX.rj}`)}`;
+	const separatorLine = `${styleBorder(BOX.lj)}${styleBorder("─")}${sepCells.join(styleBorder(`─${BOX.xj}─`))}${styleBorder(`─${BOX.rj}`)}`;
 	out.push(separatorLine);
 
 	// Data rows with optional row separator between them
@@ -210,7 +210,7 @@ export function renderTableBox(
 
 	// Bottom border: ╰─┴─╯
 	const bottomCells = columnWidths.map((w) => styleBorder(BOX.h.repeat(w)));
-	out.push(`${styleBorder(BOX.bl)}${bottomCells.join(styleBorder(`─${BOX.bj}`))}${styleBorder(`─${BOX.br}`)}`);
+	out.push(`${styleBorder(BOX.bl)}${styleBorder("─")}${bottomCells.join(styleBorder(`─${BOX.bj}─`))}${styleBorder(`─${BOX.br}`)}`);
 
 	if (nextTokenType && nextTokenType !== "space") out.push("");
 	return out;

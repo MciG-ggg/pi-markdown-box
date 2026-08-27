@@ -30,6 +30,15 @@ export function readBuiltinMermaidMode(): "off" | "final" | "streaming" {
 	}
 }
 
+export function isPiMermaidInstalled(): boolean {
+	try {
+		const settings = JSON.parse(fs.readFileSync(SETTINGS_PATH, "utf8")) as { packages?: string[] };
+		return (settings.packages ?? []).includes("npm:pi-mermaid");
+	} catch {
+		return false;
+	}
+}
+
 function makeBorder(
 	theme: NonNullable<MarkdownLike["theme"]>,
 	left: string,

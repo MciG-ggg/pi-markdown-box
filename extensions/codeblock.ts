@@ -3,7 +3,7 @@
  */
 import { truncateToWidth, visibleWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
 import { getConfig, makeStyler, padAnsi, type MarkdownBoxConfig, type MarkdownLike } from "./theme";
-import { isMermaidCodeToken } from "./mermaid";
+import { isMermaidCodeToken, isPiMermaidInstalled } from "./mermaid";
 
 type CodeToken = {
 	type: string;
@@ -37,7 +37,7 @@ export function renderCodeBox(
 	width: number,
 	nextTokenType?: string,
 ): string[] {
-	if (isMermaidCodeToken(token)) return []; // defer to npm:pi-mermaid
+	if (isMermaidCodeToken(token) && isPiMermaidInstalled()) return []; // defer to npm:pi-mermaid
 	const theme = instance.theme;
 	if (!theme || width < 8) return [];
 

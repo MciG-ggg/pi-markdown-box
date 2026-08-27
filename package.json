@@ -16,7 +16,8 @@
   "license": "MIT",
   "files": [
     "extensions",
-    "README.md"
+    "README.md",
+    "LICENSE"
   ],
   "pi": {
     "extensions": [

@@ -17,6 +17,7 @@ import { renderTableBox } from "./table";
 import {
 	createMermaidMessageRenderer,
 	isMermaidCodeToken,
+	isPiMermaidInstalled,
 	readBuiltinMermaidMode,
 } from "./mermaid";
 import { registerSettingsCommand } from "./settings";
@@ -53,7 +54,7 @@ export default function (pi: ExtensionAPI) {
 		const maybeToken = token as { type?: string; lang?: string; text?: string };
 
 		if (maybeToken?.type === "code") {
-			if (isMermaidCodeToken(maybeToken)) return []; // defer to npm:pi-mermaid
+			if (isMermaidCodeToken(maybeToken) && isPiMermaidInstalled()) return []; // defer to npm:pi-mermaid
 			try {
 				const boxed = renderCodeBox(this, maybeToken as { type: string; text?: string; lang?: string }, width, nextTokenType);
 				if (boxed.length > 0) return boxed;
@@ -78,7 +79,7 @@ export default function (pi: ExtensionAPI) {
 	pi.registerMessageRenderer("pi-mermaid", createMermaidMessageRenderer());
 
 	const mermaidMode = readBuiltinMermaidMode();
-	if (mermaidMode !== "off") {
+	if (isPiMermaidInstalled() && mermaidMode !== "off") {
 		console.warn(
 			`[pi-markdown-box] Built-in markdown.mermaid is "${mermaidMode}". Set it to "off" so only npm:pi-mermaid renders diagrams (otherwise the built-in and pi-mermaid both fire).`,
 		);
@@ -119,10 +120,12 @@ if (process.env.PI_MARKDOWN_BOX_SELF_TEST === "1") {
 		if (out.length !== 0) fail(`codeblock-narrow: expected [], got ${out.length}`);
 	}
 
-	// Mermaid code fence is hidden
+	// Mermaid code fence: renders normally unless npm:pi-mermaid is installed (then swallowed)
 	{
 		const out = renderCodeBox(mockInstance, { type: "code", lang: "mermaid", text: "graph TD" }, 60);
-		if (out.length !== 0) fail(`mermaid-hide: expected [], got ${out.length}`);
+		// Without npm:pi-mermaid in settings.json (this user's setup), the fence renders normally.
+		if (out.length < 3) fail(`mermaid-render: expected normal box render, got ${out.length} lines`);
+		if (!out[0].includes("mermaid")) fail("mermaid-render: missing mermaid label");
 	}
 
 	// Table: basic
@@ -181,6 +184,25 @@ if (process.env.PI_MARKDOWN_BOX_SELF_TEST === "1") {
 		} as Parameters<typeof renderTableBox>[1];
 		const out = renderTableBox(mockInstance, token, 30);
 		if (out.length < 4) fail(`table-cjk: expected >=4 lines, got ${out.length}`);
+	}
+
+	// Table: border alignment regression (mock theme wraps border chars individually,
+// so widths can't be compared directly. Just verify all expected lines are produced.)
+	{
+		const token = {
+			type: "table",
+			header: [{ text: "A" }, { text: "B" }, { text: "C" }],
+			align: ["left", "left", "left"] as const,
+			rows: [[{ text: "x" }, { text: "y" }, { text: "z" }]],
+		} as Parameters<typeof renderTableBox>[1];
+		const out = renderTableBox(mockInstance, token, 30);
+		// top + header + separator + row + bottom = 5 lines
+		if (out.length !== 5) fail(`table-align: expected 5 lines, got ${out.length}`);
+		if (!out[0].includes("╭")) fail("table-align: top border missing ╭");
+		if (!out[2].includes("├")) fail("table-align: separator missing ├");
+		if (!out[4].includes("╰")) fail("table-align: bottom border missing ╰");
+		// The fix added ─ between cells: separator should have at least one ┬
+		if (!out[2].includes("┼")) fail("table-align: separator missing ┼ (regression: borderOverhead-style join not applied)");
 	}
 
 	console.log("pi-markdown-box self-check passed");
