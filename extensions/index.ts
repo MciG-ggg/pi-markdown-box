@@ -72,7 +72,16 @@ export default function (pi: ExtensionAPI) {
 
 		if (maybeToken?.type === "code") {
 			if (maybeToken.text) recordCodeBlock(maybeToken.lang ?? "", maybeToken.text);
-			if (isMermaidCodeToken(maybeToken) && isPiMermaidInstalled()) return []; // defer to npm:pi-mermaid
+			if (isMermaidCodeToken(maybeToken)) {
+				// Never wrap mermaid fences in our box style.
+				// - npm:pi-mermaid installed → defer to its message renderer.
+				// - otherwise → pi's built-in mermaid transformer already ran on the
+				//   markdown text: if width fit, it replaced this block with ASCII
+				//   art (no longer a code token, we wouldn't see it); if width
+				//   fell back, this is the raw source — render it as plain code so
+				//   it's still readable and copyable, just not boxed.
+				return isPiMermaidInstalled() ? [] : original.call(this, token, width, nextTokenType, styleContext);
+			}
 			try {
 				const boxed = renderCodeBox(this, maybeToken as { type: string; text?: string; lang?: string }, width, nextTokenType);
 				if (boxed.length > 0) return boxed;
