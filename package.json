@@ -1,6 +1,6 @@
 {
   "name": "pi-markdown-box",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Pi extension that renders inline Markdown fenced code blocks and tables as terminal boxes (╭─╮ style). Fork of pi-codeblock-box with broader scope.",
   "type": "module",
   "main": "./extensions/index.ts",
