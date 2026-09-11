@@ -82,11 +82,19 @@ export default function (pi: ExtensionAPI) {
 				//   it's still readable and copyable, just not boxed.
 				return isPiMermaidInstalled() ? [] : original.call(this, token, width, nextTokenType, styleContext);
 			}
-			try {
-				const boxed = renderCodeBox(this, maybeToken as { type: string; text?: string; lang?: string }, width, nextTokenType);
-				if (boxed.length > 0) return boxed;
-			} catch (error) {
-				console.warn(`[pi-markdown-box] Falling back to default code block renderer: ${error instanceof Error ? error.message : String(error)}`);
+			// Only box fenced code that has a language label. Bare ``` fences
+			// (lang === "" / whitespace) fall through to the default renderer
+			// so pi's plain code styling is preserved. ponytail: gating at the
+			// single dispatch site instead of inside renderCodeBox keeps the
+			// box renderer reusable for callers that always supply a label.
+			const hasLang = (maybeToken.lang ?? "").trim().length > 0;
+			if (hasLang) {
+				try {
+					const boxed = renderCodeBox(this, maybeToken as { type: string; text?: string; lang?: string }, width, nextTokenType);
+					if (boxed.length > 0) return boxed;
+				} catch (error) {
+					console.warn(`[pi-markdown-box] Falling back to default code block renderer: ${error instanceof Error ? error.message : String(error)}`);
+				}
 			}
 		}
 
@@ -183,6 +191,26 @@ if (process.env.PI_MARKDOWN_BOX_SELF_TEST === "1") {
 	{
 		const out = renderCodeBox(mockInstance, { type: "code", lang: "py", text: "x" }, 4);
 		if (out.length !== 0) fail(`codeblock-narrow: expected [], got ${out.length}`);
+	}
+
+	// Bare fence (lang === ""): renderCodeBox is still invoked in the
+	// self-check (it has no gate inside), but the *patcher* in this file
+	// must skip it. We exercise the gate by replaying the same dispatch
+	// logic below.
+	{
+		const token = { type: "code", lang: "", text: "x = 1" };
+		const hasLang = (token.lang ?? "").trim().length > 0;
+		if (hasLang) fail("gate: bare fence lang must be falsy");
+	}
+	{
+		const token = { type: "code", lang: "   ", text: "x" };
+		const hasLang = (token.lang ?? "").trim().length > 0;
+		if (hasLang) fail("gate: whitespace-only lang must be falsy");
+	}
+	{
+		const token = { type: "code", lang: "python", text: "x" };
+		const hasLang = (token.lang ?? "").trim().length > 0;
+		if (!hasLang) fail("gate: labeled fence must pass");
 	}
 
 	// Mermaid code fence: renders normally unless npm:pi-mermaid is installed (then swallowed)
