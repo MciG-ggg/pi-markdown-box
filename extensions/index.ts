@@ -36,6 +36,14 @@ const recentCodeBlocks: { lang: string; text: string }[] = [];
 const MAX_RECENT = 16;
 
 function recordCodeBlock(lang: string, text: string) {
+	// pi-tui calls renderToken multiple times per code block (layout pre-pass,
+	// repaint on theme/width change, message replay). Consecutive-equality dedupe
+	// is enough to absorb that re-render noise without collapsing legitimately
+	// distinct blocks the user happened to author with the same content.
+	// ponytail: scoped to consecutive entries — a full content-keyed Set would
+	// over-collapse two unrelated blocks that happen to share text.
+	const last = recentCodeBlocks[recentCodeBlocks.length - 1];
+	if (last && last.lang === lang && last.text === text) return;
 	recentCodeBlocks.push({ lang, text });
 	if (recentCodeBlocks.length > MAX_RECENT) recentCodeBlocks.shift();
 }
@@ -320,6 +328,28 @@ if (process.env.PI_MARKDOWN_BOX_SELF_TEST === "1") {
 		const viaPick = recentCodeBlocks[recentCodeBlocks.length - (labels.indexOf(picked) + 1)];
 		if (viaPick?.text !== String(MAX_RECENT + 2 - 4)) fail("copy-block: pick index mapping off");
 
+		recentCodeBlocks.length = 0;
+	}
+
+	// Regression: re-rendering the same code block (pi-tui invokes renderToken
+	// multiple times per token) must NOT fill the ring with duplicates.
+	{
+		recentCodeBlocks.length = 0;
+		for (let i = 0; i < MAX_RECENT + 5; i++) recordCodeBlock("t", "same");
+		if (recentCodeBlocks.length !== 1)
+			fail(`copy-dedupe: re-render filled the ring (got ${recentCodeBlocks.length}, want 1)`);
+		recentCodeBlocks.length = 0;
+	}
+
+	// Guard: consecutive dedupe must NOT collapse distinct blocks that happen
+	// to share text with an earlier (non-adjacent) entry.
+	{
+		recentCodeBlocks.length = 0;
+		recordCodeBlock("t", "a");
+		recordCodeBlock("t", "b");
+		recordCodeBlock("t", "a"); // same as first, but last is "b" → must push
+		if (recentCodeBlocks.length !== 3)
+			fail(`copy-dedupe: distinct blocks must accumulate (got ${recentCodeBlocks.length}, want 3)`);
 		recentCodeBlocks.length = 0;
 	}
 
