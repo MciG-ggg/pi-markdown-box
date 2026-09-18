@@ -1,5 +1,8 @@
 node_modules/
 
+# Bun lockfile (not tracked in this repo)
+bun.lock
+
 # Logs
 *.log
 npm-debug.log*
