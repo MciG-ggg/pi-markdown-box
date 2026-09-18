@@ -13,6 +13,7 @@
  */
 import { copyToClipboard, type ExtensionAPI, type ExtensionUIContext } from "@earendil-works/pi-coding-agent";
 import { Markdown } from "@earendil-works/pi-tui";
+import fs from "node:fs";
 import { renderCodeBox } from "./codeblock";
 import { renderTableBox } from "./table";
 import {
@@ -21,8 +22,9 @@ import {
 	isPiMermaidInstalled,
 	readBuiltinMermaidMode,
 } from "./mermaid";
-import { registerSettingsCommand } from "./settings";
+import { registerSettingsCommand, parseCommandArgs } from "./settings";
 import type { MarkdownLike } from "./theme";
+import { normalizeColorInput, hexToRgb, colorizeHex, writeConfig, getConfig } from "./theme";
 
 const PATCH_FLAG = Symbol.for("pi-markdown-box-renderer.patched");
 const ORIGINAL = Symbol.for("pi-markdown-box-renderer.originalRenderToken");
@@ -319,6 +321,223 @@ if (process.env.PI_MARKDOWN_BOX_SELF_TEST === "1") {
 		if (viaPick?.text !== String(MAX_RECENT + 2 - 4)) fail("copy-block: pick index mapping off");
 
 		recentCodeBlocks.length = 0;
+	}
+
+	// === Phase 2: gap coverage ===
+
+	// parseCommandArgs: all documented input shapes
+	{
+		const parseCases: Array<[string, unknown]> = [
+			["", undefined],
+			["   ", undefined],
+			["show", { action: "show" }],
+			["status", { action: "show" }],
+			["reset", { action: "reset" }],
+			["label blue", { field: "labelColor", value: "blue" }],
+			["labelColor #ffb71b", { field: "labelColor", value: "#ffb71b" }],
+			["label text blue", { field: "labelColor", value: "text blue" }],
+			["border #2aa12b", { field: "borderColor", value: "#2aa12b" }],
+			["line #abc", { field: "borderColor", value: "#abc" }],
+			["garbage", undefined],
+		];
+		for (const [input, expected] of parseCases) {
+			const got = parseCommandArgs(input);
+			if (JSON.stringify(got) !== JSON.stringify(expected)) {
+				fail(`parseCommandArgs(${JSON.stringify(input)}): expected ${JSON.stringify(expected)}, got ${JSON.stringify(got)}`);
+			}
+		}
+	}
+
+	// normalizeColorInput: edge cases including whitespace, mixed case, 3/6-digit hex
+	{
+		const normCases: Array<[string, string | undefined]> = [
+			["", undefined],
+			["   ", undefined],
+			["theme", "theme"],
+			["THEME", "theme"],
+			["  THEME  ", "theme"],
+			["none", "none"],
+			["default", "none"],
+			["blue", "blue"],
+			["  blue  ", "blue"],
+			["#fff", "#fff"],
+			// Hex preserves case (hexToRgb lowercases internally; named colors are lowercased).
+			["#FF0000", "#FF0000"],
+			["#aBcDeF", "#aBcDeF"],
+			["BLUE", "blue"],
+			["not-a-color", undefined],
+		];
+		for (const [input, expected] of normCases) {
+			const got = normalizeColorInput(input);
+			if (got !== expected) fail(`normalizeColorInput(${JSON.stringify(input)}): expected ${JSON.stringify(expected)}, got ${JSON.stringify(got)}`);
+		}
+	}
+
+	// hexToRgb + colorizeHex
+	{
+		if (JSON.stringify(hexToRgb("#fff")) !== "[255,255,255]") fail("hexToRgb #fff");
+		if (JSON.stringify(hexToRgb("#FF0000")) !== "[255,0,0]") fail("hexToRgb #FF0000");
+		if (JSON.stringify(hexToRgb("#000000")) !== "[0,0,0]") fail("hexToRgb #000000");
+		if (hexToRgb("notacolor") !== undefined) fail("hexToRgb garbage must be undefined");
+		if (JSON.stringify(hexToRgb("red")) !== JSON.stringify(hexToRgb("#f87171"))) fail("hexToRgb named red resolves to its hex");
+
+		const c = colorizeHex("#00ff00", "x");
+		if (!c.includes("x") || !c.includes("\x1b[38;2;0;255;0m")) fail("colorizeHex wraps in true-color ANSI");
+		if (colorizeHex("notacolor", "x") !== "x") fail("colorizeHex bad input returns plain text");
+	}
+
+	// getConfig hot-reload: writeConfig busts cache, env path override works
+	{
+		const tmp = `/tmp/pi-markdown-box-test-${process.pid}-${Math.random().toString(36).slice(2)}.json`;
+		const prevEnv = process.env.PI_MARKDOWN_BOX_CONFIG;
+		process.env.PI_MARKDOWN_BOX_CONFIG = tmp;
+		try {
+			const c0 = getConfig();
+			if (Object.keys(c0).length !== 0) fail(`getConfig empty: expected {}, got ${JSON.stringify(c0)}`);
+
+			writeConfig({ labelColor: "blue", borderColor: "red" });
+			const c1 = getConfig();
+			if (c1.labelColor !== "blue" || c1.borderColor !== "red") fail(`getConfig after write: ${JSON.stringify(c1)}`);
+
+			await new Promise((r) => setTimeout(r, 50));
+			writeConfig({ labelColor: "green" });
+			const c2 = getConfig();
+			if (c2.labelColor !== "green") fail(`getConfig hot-reload: expected green, got ${c2.labelColor}`);
+			if (c2.borderColor !== undefined) fail(`getConfig hot-reload: stale borderColor should be gone, got ${c2.borderColor}`);
+
+			fs.writeFileSync(tmp, "{ not json", "utf8");
+			await new Promise((r) => setTimeout(r, 50));
+			const c3 = getConfig();
+			if (Object.keys(c3).length !== 0) fail(`getConfig malformed: expected {}, got ${JSON.stringify(c3)}`);
+		} finally {
+			if (prevEnv === undefined) delete process.env.PI_MARKDOWN_BOX_CONFIG;
+			else process.env.PI_MARKDOWN_BOX_CONFIG = prevEnv;
+			try { fs.unlinkSync(tmp); } catch {}
+		}
+	}
+
+	// recordCodeBlock edge: empty / multiline
+	{
+		recentCodeBlocks.length = 0;
+		recordCodeBlock("python", "x = 1");
+		recordCodeBlock("text", "");
+		recordCodeBlock("text", "\n");
+		recordCodeBlock("text", "line1\nline2");
+		if (recentCodeBlocks.length !== 4) fail(`recordCodeBlock: expected 4 entries, got ${recentCodeBlocks.length}`);
+		const labels = copyBlockLabels();
+		if (labels[0] !== "#1 text · line1") fail(`recordCodeBlock: latest label wrong (${labels[0]})`);
+		if (labels[1] !== "#2 text · ") fail(`recordCodeBlock: empty-text label wrong (${labels[1]})`);
+		recentCodeBlocks.length = 0;
+	}
+
+	// === Patcher chain integrity (real bug suspected on /reload) ===
+	{
+		const fakeProto: Record<PropertyKey, unknown> = {};
+		const ORIGINAL = Symbol.for("pi-markdown-box-renderer.originalRenderToken");
+		let originalCalls = 0;
+		const originalFn = (token: { type?: string }, _width: number) => {
+			originalCalls++;
+			return [`orig:${token.type}`];
+		};
+		fakeProto[ORIGINAL] = originalFn;
+		fakeProto.renderToken = function v1(this: unknown, token: any, width: number) {
+			if (token?.type === "code" && (token.lang ?? "").trim()) {
+				return [`boxed1:${token.lang}`];
+			}
+			return (fakeProto[ORIGINAL] as Function).call(this, token, width);
+		};
+
+		originalCalls = 0;
+		fakeProto.renderToken({ type: "code", lang: "", text: "x" }, 30);
+		if (originalCalls !== 1) fail(`patcher-chain v1 bare fence: expected 1 original call, got ${originalCalls}`);
+
+		originalCalls = 0;
+		const r = fakeProto.renderToken({ type: "code", lang: "py", text: "x" }, 30);
+		if (r[0] !== "boxed1:py") fail(`patcher-chain v1 labeled: expected boxed, got ${r[0]}`);
+		if (originalCalls !== 0) fail(`patcher-chain v1 labeled: original should NOT be called, got ${originalCalls} calls`);
+
+		// simulate /reload — apply patch AGAIN
+		fakeProto.renderToken = function v2(this: unknown, token: any, width: number) {
+			if (token?.type === "code" && (token.lang ?? "").trim()) {
+				return [`boxed2:${token.lang}`];
+			}
+			return (fakeProto[ORIGINAL] as Function).call(this, token, width);
+		};
+		originalCalls = 0;
+		fakeProto.renderToken({ type: "code", lang: "py", text: "x" }, 30);
+		if (originalCalls !== 0) fail(`patcher-chain v2 labeled: original must not run, got ${originalCalls}`);
+
+		originalCalls = 0;
+		fakeProto.renderToken({ type: "code", lang: "", text: "x" }, 30);
+		if (originalCalls !== 1) fail(`patcher-chain v2 bare fence: ORIGINAL must be called exactly once after re-patch, got ${originalCalls}`);
+	}
+
+	// === Table edge cases ===
+
+	// single-column table
+	{
+		const token = {
+			type: "table",
+			header: [{ text: "X" }],
+			align: ["left"] as const,
+			rows: [[{ text: "a" }], [{ text: "bb" }]],
+		} as Parameters<typeof renderTableBox>[1];
+		const out = renderTableBox(mockInstance, token, 20);
+		if (out.length < 5) fail(`table-1col: expected >=5 lines, got ${out.length}`);
+		if (!out[0].includes("╭")) fail("table-1col: top border missing");
+		if (!out[out.length - 1].includes("╰")) fail("table-1col: bottom border missing");
+	}
+
+	// empty header → fallback (no crash)
+	{
+		const tokenNoRaw = {
+			type: "table",
+			header: [],
+			align: [] as const,
+			rows: [[{ text: "x" }]],
+		} as Parameters<typeof renderTableBox>[1];
+		const out1 = renderTableBox(mockInstance, tokenNoRaw, 30);
+		if (out1.length !== 0) fail(`table-empty-header no-raw: expected [], got ${out1.length}`);
+
+		const tokenWithRaw = { ...tokenNoRaw, raw: "|x|\n|---|\n|x|" } as Parameters<typeof renderTableBox>[1];
+		const out2 = renderTableBox(mockInstance, tokenWithRaw, 30);
+		if (out2.length === 0) fail("table-empty-header with-raw: expected non-empty fallback");
+		if (out2.some((l) => l.includes("╭") || l.includes("│"))) fail("table-empty-header with-raw: should not draw box chars");
+	}
+
+	// very wide content forces wrap
+	{
+		const token = {
+			type: "table",
+			header: [{ text: "A" }, { text: "B" }],
+			align: ["left", "left"] as const,
+			rows: [[{ text: "x".repeat(200) }, { text: "y".repeat(200) }]],
+		} as Parameters<typeof renderTableBox>[1];
+		const out = renderTableBox(mockInstance, token, 30);
+		if (out.length < 5) fail(`table-wide: expected wrap to >=5 lines, got ${out.length}`);
+	}
+
+	// row separator off (config)
+	{
+		const tmp = `/tmp/pi-markdown-box-rowsep-${process.pid}.json`;
+		const prevEnv = process.env.PI_MARKDOWN_BOX_CONFIG;
+		process.env.PI_MARKDOWN_BOX_CONFIG = tmp;
+		try {
+			writeConfig({ tableRowSeparator: false });
+			const token = {
+				type: "table",
+				header: [{ text: "A" }, { text: "B" }],
+				align: ["left", "left"] as const,
+				rows: [[{ text: "1" }, { text: "2" }], [{ text: "3" }, { text: "4" }]],
+			} as Parameters<typeof renderTableBox>[1];
+			const out = renderTableBox(mockInstance, token, 30);
+			// top + header + sep + row1 + row2 + bottom = 6 lines (no inter-row separator)
+			if (out.length !== 6) fail(`table-rowsep-off: expected 6 lines, got ${out.length}`);
+		} finally {
+			if (prevEnv === undefined) delete process.env.PI_MARKDOWN_BOX_CONFIG;
+			else process.env.PI_MARKDOWN_BOX_CONFIG = prevEnv;
+			try { fs.unlinkSync(tmp); } catch {}
+		}
 	}
 
 	console.log("pi-markdown-box self-check passed");

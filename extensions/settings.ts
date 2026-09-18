@@ -21,7 +21,7 @@ async function promptColor(
 	return { ...current, [field]: normalized };
 }
 
-function parseCommandArgs(args: string): { field?: "labelColor" | "borderColor"; value?: string; action?: "show" | "reset" } | undefined {
+export function parseCommandArgs(args: string): { field?: "labelColor" | "borderColor"; value?: string; action?: "show" | "reset" } | undefined {
 	const trimmed = args.trim();
 	if (!trimmed) return undefined;
 	const [first, ...rest] = trimmed.split(/\s+/);
